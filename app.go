@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -28,6 +30,10 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
+	stop := make(chan os.Signal, 1)
+
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
 	// defer profile.Start().Stop()
 	flag.Parse()
 	http.HandleFunc("/echo", echoHandler)
@@ -35,8 +41,16 @@ func main() {
 	http.HandleFunc("/", whoamI)
 	http.HandleFunc("/api", api)
 	http.HandleFunc("/health", healthHandler)
+	http.HandleFunc("/longrunning", longRunningHandler)
 	fmt.Println("Starting up on port " + port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+
+	go func() {
+		log.Fatal(http.ListenAndServe(":"+port, nil))
+	}()
+
+	<-stop
+
+	time.Sleep(10 * time.Second)
 }
 
 func printBinary(s []byte) {
@@ -52,6 +66,14 @@ func benchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	// fmt.Fprint(w, body)
 }
+
+func longRunningHandler(w http.ResponseWriter, r *http.Request) {
+	time.Sleep(5 * time.Second)
+
+	fmt.Fprintln(w, "Done sleeping\n")
+	r.Write(w)
+}
+
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
